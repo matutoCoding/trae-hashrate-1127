@@ -66,7 +66,8 @@ class EquipmentService:
             status_map = {
                 "available": "可租",
                 "rented": "已租",
-                "expired": "已过期"
+                "expired": "已过期",
+                "lost": "盘亏"
             }
             it["status_text"] = status_map.get(status, status)
             it["days_left"] = days_left

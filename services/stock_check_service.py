@@ -38,14 +38,16 @@ class StockCheckService:
                                       system_qty=system_qty, actual_qty=system_qty)
         else:
             db = DatabaseManager()
-            types = EquipmentType.get_all()
-            for t in types:
-                row = db.query_one("""
-                    SELECT COUNT(*) as cnt FROM equipment_items
-                    WHERE type_id = ? AND status = 'available'
-                """, (t.id,))
-                system_qty = row["cnt"] if row else 0
-                StockCheckItem.create(check_id, type_id=t.id, batch_id=None,
+            rows = db.query("""
+                SELECT b.id as batch_id, b.type_id,
+                       (SELECT COUNT(*) FROM equipment_items i 
+                        WHERE i.batch_id = b.id AND i.status = 'available') as available_count
+                FROM equipment_batches b
+                ORDER BY b.in_date ASC, b.expire_date ASC
+            """)
+            for b in rows:
+                system_qty = b["available_count"]
+                StockCheckItem.create(check_id, type_id=b["type_id"], batch_id=b["batch_id"],
                                       system_qty=system_qty, actual_qty=system_qty)
         StockCheckService._recalc_totals(check_id)
         return check_id, check_no
@@ -142,16 +144,23 @@ class StockCheckService:
                 params.append(batch_id)
             params.append(loss_qty)
             rows = db.query(sql, tuple(params))
+            batch_ids = set()
             for row in rows:
                 item_id = row["id"]
-                db.execute("DELETE FROM rental_order_items WHERE item_id = ?", (item_id,))
-                db.execute("DELETE FROM equipment_items WHERE id = ?", (item_id,))
+                db.execute("UPDATE equipment_items SET status = 'lost' WHERE id = ?", (item_id,))
             if batch_id:
+                batch_ids.add(batch_id)
+            else:
+                for row in rows:
+                    r = db.query_one("SELECT batch_id FROM equipment_items WHERE id = ?", (row["id"],))
+                    if r:
+                        batch_ids.add(r["batch_id"])
+            for bid in batch_ids:
                 db.execute("""
                     UPDATE equipment_batches SET quantity = (
                         SELECT COUNT(*) FROM equipment_items WHERE batch_id = ?
                     ) WHERE id = ?
-                """, (batch_id, batch_id))
+                """, (bid, bid))
         if profit_qty > 0:
             if not batch_id or not type_id:
                 return

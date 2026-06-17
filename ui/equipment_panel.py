@@ -340,6 +340,11 @@ class EquipmentPanel(QWidget):
                     item = self.item_table.item(row, col)
                     if item:
                         item.setForeground(QColor("#F44336"))
+            elif it["status"] == "lost":
+                for col in range(7):
+                    item = self.item_table.item(row, col)
+                    if item:
+                        item.setForeground(QColor("#9C27B0"))
             elif it["status"] == "available" and it["days_left"] <= 30 and it["days_left"] >= 0:
                 for col in range(7):
                     item = self.item_table.item(row, col)
