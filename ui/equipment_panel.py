@@ -399,19 +399,13 @@ class EquipmentPanel(QWidget):
 
     def _delete_batch(self, batch_id):
         allowed, msg = EquipmentBatch.check_delete_allowed(batch_id)
-        if "❌" in msg:
-            QMessageBox.critical(self, "无法删除", msg)
-            return
         if not allowed:
-            reply = QMessageBox.warning(self, "存在关联数据", msg + "\n\n是否仍要删除？",
-                                         QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-            if reply != QMessageBox.Yes:
-                return
-        else:
-            reply = QMessageBox.question(self, "确认", "确定删除该批次吗？",
-                                         QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-            if reply != QMessageBox.Yes:
-                return
+            QMessageBox.warning(self, "无法删除", msg)
+            return
+        reply = QMessageBox.question(self, "确认删除", "确定删除该批次吗？此操作不可恢复。",
+                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply != QMessageBox.Yes:
+            return
         try:
             EquipmentBatch.delete(batch_id)
             self.refresh_data()
@@ -442,19 +436,13 @@ class EquipmentPanel(QWidget):
 
     def _delete_type(self, type_id):
         allowed, msg = EquipmentType.check_delete_allowed(type_id)
-        if "❌" in msg:
-            QMessageBox.critical(self, "无法删除", msg)
-            return
         if not allowed:
-            reply = QMessageBox.warning(self, "存在关联数据", msg + "\n\n是否仍要删除？",
-                                         QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-            if reply != QMessageBox.Yes:
-                return
-        else:
-            reply = QMessageBox.question(self, "确认", "确定删除该设备类型吗？",
-                                         QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-            if reply != QMessageBox.Yes:
-                return
+            QMessageBox.warning(self, "无法删除", msg)
+            return
+        reply = QMessageBox.question(self, "确认删除", "确定删除该设备类型吗？此操作不可恢复。",
+                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply != QMessageBox.Yes:
+            return
         try:
             EquipmentType.delete(type_id)
             self.refresh_data()

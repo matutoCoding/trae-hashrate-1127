@@ -6,6 +6,8 @@ from ui.equipment_panel import EquipmentPanel
 from ui.rental_panel import RentalPanel
 from ui.billing_panel import BillingPanel
 from ui.dashboard_panel import DashboardPanel
+from ui.stock_check_panel import StockCheckPanel
+from ui.report_panel import ReportPanel
 
 
 class NavButton(QPushButton):
@@ -96,6 +98,8 @@ class MainWindow(QMainWindow):
             ("🔧 设备批次", 2),
             ("📦 租赁出库", 3),
             ("💰 账单管理", 4),
+            ("📋 库存盘点", 5),
+            ("📈 统计报表", 6),
         ]
         self.nav_buttons = []
         for text, idx in nav_items:
@@ -142,12 +146,16 @@ class MainWindow(QMainWindow):
         self.equipment_panel = EquipmentPanel()
         self.rental_panel = RentalPanel()
         self.billing_panel = BillingPanel()
+        self.stock_check_panel = StockCheckPanel()
+        self.report_panel = ReportPanel()
 
         self.stack.addWidget(self.dashboard_panel)
         self.stack.addWidget(self.rate_panel)
         self.stack.addWidget(self.equipment_panel)
         self.stack.addWidget(self.rental_panel)
         self.stack.addWidget(self.billing_panel)
+        self.stack.addWidget(self.stock_check_panel)
+        self.stack.addWidget(self.report_panel)
 
         content_layout.addWidget(self.stack)
 
@@ -159,6 +167,7 @@ class MainWindow(QMainWindow):
         self.rental_panel.order_returned.connect(self._on_data_changed)
         self.equipment_panel.data_changed.connect(self._on_data_changed)
         self.rate_panel.data_changed.connect(self._on_data_changed)
+        self.stock_check_panel.data_changed.connect(self._on_data_changed)
 
     def _on_data_changed(self):
         self.dashboard_panel.refresh_data()
@@ -168,13 +177,15 @@ class MainWindow(QMainWindow):
             btn.set_active(False)
         button.set_active(True)
         self.stack.setCurrentIndex(index)
-        titles = ["概览", "时段费率管理", "设备批次管理", "租赁出库管理", "账单管理"]
+        titles = ["概览", "时段费率管理", "设备批次管理", "租赁出库管理", "账单管理", "库存盘点", "统计报表"]
         subtitles = [
             "系统运行状态总览",
             "分时段费率配置与计费测试",
             "设备批次登记、效期管理与临期预警",
             "FIFO先进先出库与租期登记",
             "分段计费明细、超期罚金与账单查看",
+            "库存盘点管理与盘盈盘亏",
+            "多维度收入统计与报表导出",
         ]
         self.header_title.setText(titles[index])
         self.header_subtitle.setText(subtitles[index])
@@ -186,3 +197,5 @@ class MainWindow(QMainWindow):
             self.billing_panel.refresh_data()
         elif index == 1:
             self.rate_panel.refresh_data()
+        elif index == 5:
+            self.stock_check_panel.refresh_list()

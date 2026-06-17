@@ -49,6 +49,22 @@ def generate_batch_no():
     return prefix + suffix
 
 
+def generate_item_code(batch_no=""):
+    now = datetime.now()
+    prefix = "E" + now.strftime("%Y%m%d")
+    if batch_no:
+        prefix = batch_no + "-"
+    suffix = "".join(random.choices(string.digits + string.ascii_uppercase, k=6))
+    return prefix + suffix
+
+
+def generate_check_no():
+    now = datetime.now()
+    prefix = "CK" + now.strftime("%Y%m%d%H%M%S")
+    suffix = "".join(random.choices(string.digits, k=3))
+    return prefix + suffix
+
+
 def hours_between(dt_start, dt_end):
     if dt_start >= dt_end:
         return 0.0

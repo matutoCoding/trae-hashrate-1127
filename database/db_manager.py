@@ -98,6 +98,44 @@ class DatabaseManager:
                 segment_amount REAL NOT NULL,
                 FOREIGN KEY (order_id) REFERENCES rental_orders(id)
             );
+
+            CREATE TABLE IF NOT EXISTS rental_order_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_id INTEGER NOT NULL,
+                item_id INTEGER NOT NULL,
+                daily_rate REAL DEFAULT 0,
+                FOREIGN KEY (order_id) REFERENCES rental_orders(id),
+                FOREIGN KEY (item_id) REFERENCES equipment_items(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS stock_checks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                check_no TEXT NOT NULL UNIQUE,
+                check_type TEXT NOT NULL,
+                target_id INTEGER,
+                check_date TEXT NOT NULL,
+                operator TEXT,
+                remark TEXT,
+                total_system INTEGER DEFAULT 0,
+                total_actual INTEGER DEFAULT 0,
+                total_profit INTEGER DEFAULT 0,
+                total_loss INTEGER DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'draft',
+                create_time TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS stock_check_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                check_id INTEGER NOT NULL,
+                type_id INTEGER,
+                batch_id INTEGER,
+                system_qty INTEGER DEFAULT 0,
+                actual_qty INTEGER DEFAULT 0,
+                profit_qty INTEGER DEFAULT 0,
+                loss_qty INTEGER DEFAULT 0,
+                remark TEXT,
+                FOREIGN KEY (check_id) REFERENCES stock_checks(id)
+            );
         """)
         self.conn.commit()
 

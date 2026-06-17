@@ -2,7 +2,8 @@ from datetime import datetime, timedelta
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget,
                                QTableWidgetItem, QHeaderView, QDialog, QFormLayout, QLineEdit,
                                QDoubleSpinBox, QDialogButtonBox, QMessageBox, QFrame, QDateTimeEdit,
-                               QComboBox, QTabWidget, QGroupBox, QSizePolicy)
+                               QComboBox, QTabWidget, QGroupBox, QSizePolicy, QSpinBox, QListWidget,
+                               QListWidgetItem, QSplitter)
 from PySide6.QtCore import Qt, Signal, QDateTime
 from PySide6.QtGui import QColor
 from services.rental_service import RentalService
@@ -53,6 +54,14 @@ class RentDialog(QDialog):
             )
         self.type_combo.currentIndexChanged.connect(self._update_preview)
         form.addRow("设备类型*:", self.type_combo)
+
+        self.qty_spin = QSpinBox()
+        self.qty_spin.setRange(1, 100)
+        self.qty_spin.setValue(1)
+        self.qty_spin.setSuffix(" 台")
+        self.qty_spin.setStyleSheet("padding: 6px;")
+        self.qty_spin.valueChanged.connect(self._update_preview)
+        form.addRow("租赁数量*:", self.qty_spin)
 
         now = datetime.now()
         self.start_edit = QDateTimeEdit(QDateTime(now.year, now.month, now.day, now.hour, now.minute))
@@ -120,18 +129,28 @@ class RentDialog(QDialog):
 
     def _update_preview(self):
         type_id = self.type_combo.currentData()
+        quantity = self.qty_spin.value()
         start_str = self.start_edit.dateTime().toString("yyyy-MM-dd HH:mm:ss")
         end_str = self.end_edit.dateTime().toString("yyyy-MM-dd HH:mm:ss")
         result = BillingService.calculate_rental_cost(start_str, end_str)
         type_name = self.type_combo.currentText()
+        per_unit = result['total']
+        total = round(per_unit * quantity, 2)
+
+        fifo_items = EquipmentService.get_fifo_items(type_id, count=quantity)
+        items_html = ""
+        if fifo_items and len(fifo_items) > 0:
+            items_list = "<br>".join([f"  • {it['item_code']} (批次: {it['batch_no']}, 效期: {it['expire_date']})" for it in fifo_items])
+            items_html = f"<p style='font-size:12px; color:#555;'><b>FIFO分配设备:</b><br>{items_list}</p>"
+        else:
+            items_html = "<p style='color:#F44336;'>⚠️ 库存不足</p>"
+
         html = f"""
-        <p><b>设备:</b> {type_name}</p>
+        <p><b>设备:</b> {type_name} <b>数量:</b> {quantity}台</p>
         <p><b>租期:</b> {start_str} ~ {end_str}</p>
-        <p><b>总时长:</b> {result['total_hours']:.2f} 小时</p>
-        <p><b>分段明细:</b> {"  ".join([f"{s['rate_name']}({s['hours']:.1f}h×¥{s['rate']:.0f}=¥{s['segment_amount']:.0f})" for s in result['segments']]) or '-'}</p>
-        <p style="font-size: 20px; color: #FF5722; font-weight: bold; margin-top: 8px;">
-           预估租金: ¥{result['total']:.2f}
-        </p>
+        <p><b>总时长:</b> {result['total_hours']:.2f} 小时/台</p>
+        <p><b>单价:</b> ¥{per_unit:.2f}/台 &nbsp; <b>合计:</b> <span style='font-size:18px;color:#FF5722;font-weight:bold;'>¥{total:.2f}</span></p>
+        {items_html}
         """
         self.preview_label.setText(html)
 
@@ -143,9 +162,10 @@ class RentDialog(QDialog):
             QMessageBox.warning(self, "提示", "归还时间必须晚于起租时间")
             return
         type_id = self.type_combo.currentData()
+        quantity = self.qty_spin.value()
         available = EquipmentService.get_available_count_by_type(type_id)
-        if available <= 0:
-            QMessageBox.warning(self, "提示", "该类型设备无可租设备")
+        if available < quantity:
+            QMessageBox.warning(self, "提示", f"库存不足，可用仅{available}台")
             return
         self.accept()
 
@@ -159,6 +179,7 @@ class RentDialog(QDialog):
         return {
             "customer_id": customer_id,
             "type_id": self.type_combo.currentData(),
+            "quantity": self.qty_spin.value(),
             "rent_start": self.start_edit.dateTime().toString("yyyy-MM-dd HH:mm:ss"),
             "rent_end": self.end_edit.dateTime().toString("yyyy-MM-dd HH:mm:ss"),
             "deposit": self.deposit_spin.value()
@@ -170,7 +191,7 @@ class ReturnDialog(QDialog):
         super().__init__(parent)
         self.order_info = order_info
         self.setWindowTitle("设备归还")
-        self.setMinimumWidth(480)
+        self.setMinimumWidth(520)
         self._setup_ui()
         self._update_bill()
 
@@ -179,10 +200,21 @@ class ReturnDialog(QDialog):
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(12)
 
+        item_count = self.order_info.get("item_count", 1)
         info = QLabel(f"订单: {self.order_info['order_no']} | 客户: {self.order_info.get('customer_name','')} | "
-                      f"设备: {self.order_info['type_name']} - {self.order_info['item_code']}")
+                      f"设备: {self.order_info['type_name']} (共 {item_count} 台)")
         info.setStyleSheet("font-size: 13px; color: #555; padding: 8px; background: #F5F7FA; border-radius: 4px;")
+        info.setWordWrap(True)
         layout.addWidget(info)
+
+        items = RentalService.get_order_items(self.order_info["id"])
+        items_text = "、".join([i["item_code"] for i in items[:5]])
+        if len(items) > 5:
+            items_text += f" 等{len(items)}台"
+        items_label = QLabel(f"设备清单: {items_text}")
+        items_label.setStyleSheet("font-size: 12px; color: #666; padding-left: 4px;")
+        items_label.setWordWrap(True)
+        layout.addWidget(items_label)
 
         form = QFormLayout()
         form.setSpacing(10)
@@ -360,7 +392,7 @@ class RentalPanel(QWidget):
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(0, 0, 0, 0)
         table = QTableWidget()
-        columns = ["订单号", "客户", "电话", "设备类型", "设备编码", "批次",
+        columns = ["订单号", "客户", "电话", "设备类型", "设备数量",
                    "起租时间", "应还时间", "实还时间", "押金", "租金", "超期罚金", "状态", "操作"]
         if mode == "active":
             columns.remove("实还时间")
@@ -412,17 +444,17 @@ class RentalPanel(QWidget):
             self._set_item(table, row, 1, o.get("customer_name", ""))
             self._set_item(table, row, 2, o.get("phone", ""))
             self._set_item(table, row, 3, o["type_name"])
-            self._set_item(table, row, 4, o["item_code"])
-            self._set_item(table, row, 5, o["batch_no"])
-            self._set_item(table, row, 6, o["rent_start"])
-            self._set_item(table, row, 7, o["rent_end"])
+            item_count = o.get("item_count", 1)
+            self._set_item(table, row, 4, f"{item_count} 台")
+            self._set_item(table, row, 5, o["rent_start"])
+            self._set_item(table, row, 6, o["rent_end"])
             col_offset = 0
             if mode == "history":
-                self._set_item(table, row, 8, o.get("actual_return", ""))
+                self._set_item(table, row, 7, o.get("actual_return", ""))
                 col_offset = 1
-            self._set_item(table, row, 8 + col_offset, f"¥{o['deposit']:.2f}")
-            self._set_item(table, row, 9 + col_offset, f"¥{o['base_amount']:.2f}")
-            self._set_item(table, row, 10 + col_offset, f"¥{o['overtime_amount']:.2f}")
+            self._set_item(table, row, 7 + col_offset, f"¥{o['deposit']:.2f}")
+            self._set_item(table, row, 8 + col_offset, f"¥{o['base_amount']:.2f}")
+            self._set_item(table, row, 9 + col_offset, f"¥{o['overtime_amount']:.2f}")
 
             status_text_map = {"active": "租赁中", "closed": "已归还"}
             st = status_text_map.get(o["status"], o["status"])
@@ -432,7 +464,7 @@ class RentalPanel(QWidget):
                 if rent_end and rent_end < datetime.now():
                     st = "超期未还"
                     is_overdue = True
-            self._set_item(table, row, 11 + col_offset, st)
+            self._set_item(table, row, 10 + col_offset, st)
             if is_overdue:
                 for c in range(table.columnCount()):
                     it = table.item(row, c)
@@ -444,6 +476,14 @@ class RentalPanel(QWidget):
             btn_layout.setContentsMargins(4, 2, 4, 2)
             btn_layout.setSpacing(6)
             btn_layout.addStretch()
+            detail_btn = QPushButton("设备清单")
+            detail_btn.setStyleSheet("""
+                QPushButton { background-color: #607D8B; color: white; padding: 4px 10px; 
+                              border: none; border-radius: 3px; font-size: 12px; }
+                QPushButton:hover { background-color: #455A64; }
+            """)
+            detail_btn.clicked.connect(lambda _, ord=o: self._show_order_items(ord))
+            btn_layout.addWidget(detail_btn)
             if o["status"] == "active":
                 return_btn = QPushButton("归还结算")
                 return_btn.setStyleSheet("""
@@ -462,7 +502,7 @@ class RentalPanel(QWidget):
             bill_btn.clicked.connect(lambda _, ord=o: self._show_bill(ord))
             btn_layout.addWidget(bill_btn)
             btn_layout.addStretch()
-            table.setCellWidget(row, 12 + col_offset, btn_widget)
+            table.setCellWidget(row, 11 + col_offset, btn_widget)
         table.verticalHeader().setDefaultSectionSize(38)
 
     def _set_item(self, table, row, col, text):
@@ -507,6 +547,61 @@ class RentalPanel(QWidget):
                     QMessageBox.warning(self, "失败", err or "归还失败")
             except Exception as e:
                 QMessageBox.critical(self, "错误", f"操作失败：{str(e)}")
+
+    def _show_order_items(self, order_info):
+        items = RentalService.get_order_items(order_info["id"])
+        dlg = QDialog(self)
+        dlg.setWindowTitle(f"订单设备清单 - {order_info['order_no']}")
+        dlg.setMinimumSize(500, 400)
+        layout = QVBoxLayout(dlg)
+        layout.setContentsMargins(20, 20, 20, 20)
+
+        info = QLabel(f"客户: {order_info.get('customer_name', '')} | 设备类型: {order_info['type_name']} | 共 {len(items)} 台")
+        info.setStyleSheet("font-size: 13px; color: #555; padding: 8px; background: #F5F7FA; border-radius: 4px;")
+        layout.addWidget(info)
+
+        table = QTableWidget()
+        table.setColumnCount(4)
+        table.setHorizontalHeaderLabels(["设备编码", "所属批次", "失效日期", "状态"])
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        table.verticalHeader().setVisible(False)
+        table.setEditTriggers(QTableWidget.NoEditTriggers)
+        table.setRowCount(len(items))
+        for row, item in enumerate(items):
+            status_text_map = {"available": "可租", "rented": "已租", "expired": "已过期"}
+            status = status_text_map.get(item["status"], item["status"])
+            table.setItem(row, 0, QTableWidgetItem(item["item_code"]))
+            table.setItem(row, 1, QTableWidgetItem(item["batch_no"]))
+            table.setItem(row, 2, QTableWidgetItem(item["expire_date"]))
+            table.setItem(row, 3, QTableWidgetItem(status))
+            for col in range(4):
+                table.item(row, col).setTextAlignment(Qt.AlignCenter)
+            if item["status"] == "expired":
+                for col in range(4):
+                    table.item(row, col).setForeground(QColor("#F44336"))
+            elif item["status"] == "rented":
+                for col in range(4):
+                    table.item(row, col).setForeground(QColor("#2196F3"))
+        table.setStyleSheet("""
+            QTableWidget { border: 1px solid #E0E0E0; border-radius: 4px; gridline-color: #EEE; }
+            QHeaderView::section { background-color: #F8F9FA; padding: 8px; border: none;
+                                   border-bottom: 1px solid #E0E0E0; font-weight: bold; color: #2C3E50; }
+        """)
+        table.verticalHeader().setDefaultSectionSize(34)
+        layout.addWidget(table, 1)
+
+        close_btn = QPushButton("关闭")
+        close_btn.setStyleSheet("""
+            QPushButton { background-color: #E0E0E0; color: #333; padding: 8px 24px; 
+                          border: none; border-radius: 4px; }
+            QPushButton:hover { background-color: #BDBDBD; }
+        """)
+        close_btn.clicked.connect(dlg.accept)
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        btn_layout.addWidget(close_btn)
+        layout.addLayout(btn_layout)
+        dlg.exec()
 
     def _show_bill(self, order_info):
         from ui.billing_panel import BillDetailDialog
