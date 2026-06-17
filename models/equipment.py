@@ -41,7 +41,38 @@ class EquipmentType:
     @staticmethod
     def delete(type_id):
         db = DatabaseManager()
+        db.execute("""
+            DELETE FROM equipment_items WHERE type_id = ?
+        """, (type_id,))
+        db.execute("""
+            DELETE FROM equipment_batches WHERE type_id = ?
+        """, (type_id,))
         db.execute("DELETE FROM equipment_types WHERE id = ?", (type_id,))
+
+    @staticmethod
+    def check_delete_allowed(type_id):
+        db = DatabaseManager()
+        batches = db.query_one("SELECT COUNT(*) as cnt FROM equipment_batches WHERE type_id = ?", (type_id,))
+        items = db.query_one("SELECT COUNT(*) as cnt FROM equipment_items WHERE type_id = ?", (type_id,))
+        rented_items = db.query_one("""
+            SELECT COUNT(*) as cnt FROM equipment_items i
+            WHERE i.type_id = ? AND i.status = 'rented'
+        """, (type_id,))
+        orders = db.query_one("SELECT COUNT(*) as cnt FROM rental_orders WHERE type_id = ?", (type_id,))
+        errors = []
+        if rented_items and rented_items["cnt"] > 0:
+            errors.append(f"❌ {rented_items['cnt']} 台设备已租出未归还，禁止删除")
+        if batches and batches["cnt"] > 0:
+            errors.append(f"关联 {batches['cnt']} 个设备批次")
+        if items and items["cnt"] > 0:
+            errors.append(f"关联 {items['cnt']} 台设备")
+        if orders and orders["cnt"] > 0:
+            errors.append(f"关联 {orders['cnt']} 个租赁订单")
+        if rented_items and rented_items["cnt"] > 0:
+            return False, "、".join(errors) + "\n\n请先归还所有租出设备后再删除。"
+        if errors:
+            return False, "、".join(errors) + "\n\n删除将同时删除该类型下所有批次和设备。"
+        return True, ""
 
 
 class EquipmentBatch:
@@ -88,6 +119,7 @@ class EquipmentBatch:
     @staticmethod
     def create(batch_no, type_id, quantity, expire_date, in_date, remark=""):
         db = DatabaseManager()
+        today = date.today()
         cursor = db.execute("""
             INSERT INTO equipment_batches (batch_no, type_id, quantity, expire_date, in_date, remark)
             VALUES (?, ?, ?, ?, ?, ?)
@@ -108,6 +140,32 @@ class EquipmentBatch:
         db = DatabaseManager()
         db.execute("DELETE FROM equipment_items WHERE batch_id = ?", (batch_id,))
         db.execute("DELETE FROM equipment_batches WHERE id = ?", (batch_id,))
+
+    @staticmethod
+    def check_delete_allowed(batch_id):
+        db = DatabaseManager()
+        items = db.query_one("SELECT COUNT(*) as cnt FROM equipment_items WHERE batch_id = ?", (batch_id,))
+        rented_items = db.query_one("""
+            SELECT COUNT(*) as cnt FROM equipment_items i
+            WHERE i.batch_id = ? AND i.status = 'rented'
+        """, (batch_id,))
+        orders = db.query_one("""
+            SELECT COUNT(*) as cnt FROM rental_orders o
+            JOIN equipment_items i ON o.item_id = i.id
+            WHERE i.batch_id = ?
+        """, (batch_id,))
+        errors = []
+        if rented_items and rented_items["cnt"] > 0:
+            errors.append(f"❌ {rented_items['cnt']} 台设备已租出未归还，禁止删除")
+        if items and items["cnt"] > 0:
+            errors.append(f"包含 {items['cnt']} 台设备")
+        if orders and orders["cnt"] > 0:
+            errors.append(f"关联 {orders['cnt']} 个租赁订单")
+        if rented_items and rented_items["cnt"] > 0:
+            return False, "、".join(errors) + "\n\n请先归还所有租出设备后再删除。"
+        if errors:
+            return False, "、".join(errors) + "\n\n删除将同时删除该批次下所有设备。"
+        return True, ""
 
     def get_expire_status(self):
         db = DatabaseManager()

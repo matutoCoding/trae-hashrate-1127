@@ -137,8 +137,15 @@ class BillDetailDialog(QDialog):
         """)
 
         unpaid = max(0, order.total_amount - order.paid_amount)
+        self.pay_spin.setMaximum(unpaid if unpaid > 0 else 0)
         self.pay_spin.setValue(unpaid)
         self.pay_btn.setEnabled(unpaid > 0)
+        if unpaid <= 0:
+            self.pay_spin.setSuffix(" (已结清)")
+            self.pay_spin.setEnabled(False)
+        else:
+            self.pay_spin.setSuffix("")
+            self.pay_spin.setEnabled(True)
 
     def _set_item(self, table, row, col, text):
         item = QTableWidgetItem(str(text))

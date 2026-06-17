@@ -474,31 +474,39 @@ class RentalPanel(QWidget):
         dlg = RentDialog(self)
         if dlg.exec() == QDialog.Accepted:
             data = dlg.get_data()
-            order_id, msg_or_no = RentalService.create_rental(**data)
-            if order_id:
-                QMessageBox.information(self, "成功", f"租赁成功！\n订单号: {msg_or_no}")
-                self.refresh_data()
-                self.order_created.emit()
-            else:
-                QMessageBox.warning(self, "失败", msg_or_no)
+            try:
+                order_id, msg_or_no = RentalService.create_rental(**data)
+                if order_id:
+                    QMessageBox.information(self, "成功", f"租赁成功！\n订单号: {msg_or_no}")
+                    self.refresh_data()
+                    self.order_created.emit()
+                else:
+                    QMessageBox.warning(self, "失败", msg_or_no or "创建订单失败")
+            except Exception as e:
+                QMessageBox.critical(self, "错误", f"创建租赁失败：{str(e)}")
 
     def _return_equipment(self, order_info):
         dlg = ReturnDialog(order_info, self)
         if dlg.exec() == QDialog.Accepted:
             data = dlg.get_data()
-            result, err = RentalService.return_equipment(order_info["id"], data["actual_return"])
-            if result:
-                if data["pay_amount"] > 0:
-                    RentalService.pay_order(order_info["id"], data["pay_amount"])
-                QMessageBox.information(self, "成功",
-                    f"归还成功！\n"
-                    f"基础租金: ¥{result['base_amount']:.2f}\n"
-                    f"超期罚金: ¥{result['overtime_amount']:.2f}\n"
-                    f"合计: ¥{result['total']:.2f}")
-                self.refresh_data()
-                self.order_returned.emit()
-            else:
-                QMessageBox.warning(self, "失败", err)
+            try:
+                result, err = RentalService.return_equipment(order_info["id"], data["actual_return"])
+                if result:
+                    pay_msg = ""
+                    if data["pay_amount"] > 0:
+                        pay_ok, pay_msg = RentalService.pay_order(order_info["id"], data["pay_amount"])
+                    QMessageBox.information(self, "成功",
+                        f"归还成功！\n"
+                        f"基础租金: ¥{result['base_amount']:.2f}\n"
+                        f"超期罚金: ¥{result['overtime_amount']:.2f}\n"
+                        f"合计: ¥{result['total']:.2f}\n"
+                        f"{pay_msg if pay_msg else ''}")
+                    self.refresh_data()
+                    self.order_returned.emit()
+                else:
+                    QMessageBox.warning(self, "失败", err or "归还失败")
+            except Exception as e:
+                QMessageBox.critical(self, "错误", f"操作失败：{str(e)}")
 
     def _show_bill(self, order_info):
         from ui.billing_panel import BillDetailDialog

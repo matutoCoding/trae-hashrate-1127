@@ -107,8 +107,15 @@ class RentalService:
         order = RentalOrder.get_by_id(order_id)
         if not order:
             return False, "订单不存在"
+        if amount <= 0:
+            return False, "支付金额必须大于0"
+        unpaid = order.total_amount - order.paid_amount
+        if unpaid <= 0:
+            return False, "该订单已结清，无需再支付"
+        if amount > unpaid:
+            amount = unpaid
         order.pay(amount)
-        return True, "支付成功"
+        return True, f"支付成功 ¥{amount:.2f}"
 
     @staticmethod
     def check_overdue_orders():
