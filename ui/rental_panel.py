@@ -276,19 +276,26 @@ class ReturnDialog(QDialog):
             self.order_info["rent_end"],
             return_str
         )
+        quantity = self.order_info.get("item_count", 1)
+        base_total = round(result["base_amount"] * quantity, 2)
+        overtime_total = round(result["overtime_amount"] * quantity, 2)
+        grand_total = round(base_total + overtime_total, 2)
+
         segments_html = ""
         for s in result["segments"]:
             color = "#F44336" if s.get("is_overtime") else "#1976D2"
+            seg_amount = round(s["segment_amount"] * quantity, 2)
             segments_html += (f'<tr><td style="padding:3px;">{s["rate_name"]}</td>'
                               f'<td style="padding:3px;text-align:center;">{s["hours"]:.2f}h</td>'
                               f'<td style="padding:3px;text-align:right;">¥{s["rate"]:.2f}</td>'
-                              f'<td style="padding:3px;text-align:right;color:{color};font-weight:bold;">¥{s["segment_amount"]:.2f}</td></tr>')
+                              f'<td style="padding:3px;text-align:right;color:{color};font-weight:bold;">¥{seg_amount:.2f}</td></tr>')
+        qty_info = f" (共 {quantity} 台 × 单台 ¥{result['total']:.2f})" if quantity > 1 else ""
         html = f"""
         <table style="width:100%;">
           <tr><td style="padding:3px;">起租:</td><td style="padding:3px;">{self.order_info['rent_start']}</td></tr>
           <tr><td style="padding:3px;">应还:</td><td style="padding:3px;">{self.order_info['rent_end']}</td></tr>
           <tr><td style="padding:3px;">实还:</td><td style="padding:3px;">{return_str}</td></tr>
-          <tr><td style="padding:3px;">总时长:</td><td style="padding:3px;">{result['total_hours']:.2f}小时</td></tr>
+          <tr><td style="padding:3px;">总时长:</td><td style="padding:3px;">{result['total_hours']:.2f}小时/台</td></tr>
         </table>
         <hr style="border:1px solid #EEE;">
         <table style="width:100%;font-size:12px;">
@@ -298,14 +305,14 @@ class ReturnDialog(QDialog):
           {segments_html}
         </table>
         <hr style="border:1px solid #EEE;">
-        <p style="margin:2px 0;">基础租金: <b>¥{result['base_amount']:.2f}</b></p>
-        <p style="margin:2px 0;color:#F44336;">超期罚金(x1.5): <b>¥{result['overtime_amount']:.2f}</b> (超期{result['overtime_hours']:.2f}小时)</p>
+        <p style="margin:2px 0;">基础租金: <b>¥{base_total:.2f}</b></p>
+        <p style="margin:2px 0;color:#F44336;">超期罚金(x1.5): <b>¥{overtime_total:.2f}</b> (超期{result['overtime_hours']:.2f}小时)</p>
         <p style="font-size:20px;color:#FF5722;font-weight:bold;text-align:right;margin-top:8px;">
-          应付总额: ¥{result['total']:.2f}
+          应付总额: ¥{grand_total:.2f}{qty_info}
         </p>
         """
         self.bill_label.setText(html)
-        self.pay_spin.setValue(result["total"])
+        self.pay_spin.setValue(grand_total)
 
     def get_data(self):
         return {

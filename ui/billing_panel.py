@@ -94,10 +94,12 @@ class BillDetailDialog(QDialog):
         if not bill:
             return
         order = bill["order"]
+        quantity = bill.get("quantity", 1)
+        qty_info = f" &nbsp;&nbsp;<b>设备数量:</b> {quantity} 台" if quantity > 1 else ""
 
         self.info_label.setText(f"""
         <b>订单号:</b> {order.order_no} &nbsp;&nbsp;
-        <b>状态:</b> {'已归还' if order.status == 'closed' else '租赁中'}<br>
+        <b>状态:</b> {'已归还' if order.status == 'closed' else '租赁中'}{qty_info}<br>
         <b>起租:</b> {order.rent_start} &nbsp;&nbsp;
         <b>应还:</b> {order.rent_end}<br>
         <b>实还:</b> {order.actual_return or '-'} &nbsp;&nbsp;
@@ -129,7 +131,7 @@ class BillDetailDialog(QDialog):
         <table width='100%'>
           <tr><td style='padding:4px;'>基础租金:</td><td style='padding:4px;text-align:right;'>¥{bill['base_amount']:.2f}</td></tr>
           <tr><td style='padding:4px;color:#F44336;'>超期罚金 (x1.5):</td><td style='padding:4px;text-align:right;color:#F44336;'>¥{bill['overtime_amount']:.2f}</td></tr>
-          <tr><td style='padding:4px;'>总时长:</td><td style='padding:4px;text-align:right;'>{bill['total_hours']:.2f} 小时</td></tr>
+          <tr><td style='padding:4px;'>总时长:</td><td style='padding:4px;text-align:right;'>{bill['total_hours']:.2f} 小时/台</td></tr>
           <tr><td style='padding:4px;'>已付金额:</td><td style='padding:4px;text-align:right;'>¥{order.paid_amount:.2f}</td></tr>
           <tr style='font-size:18px;'><td style='padding:8px 4px;font-weight:bold;'>应付总额:</td>
           <td style='padding:8px 4px;text-align:right;color:#FF5722;font-weight:bold;'>¥{bill['total_amount']:.2f}</td></tr>
@@ -211,7 +213,7 @@ class BillingPanel(QWidget):
         self.table = QTableWidget()
         self.table.setColumnCount(12)
         self.table.setHorizontalHeaderLabels([
-            "订单号", "客户", "设备类型", "设备编码",
+            "订单号", "客户", "设备类型", "设备数量",
             "起租", "应还", "实还",
             "基础租金", "超期罚金", "总金额", "已付", "操作"
         ])
@@ -249,7 +251,8 @@ class BillingPanel(QWidget):
             self._set_item(self.table, row, 0, o["order_no"])
             self._set_item(self.table, row, 1, o.get("customer_name", ""))
             self._set_item(self.table, row, 2, o["type_name"])
-            self._set_item(self.table, row, 3, o["item_code"])
+            item_count = o.get("item_count", 1)
+            self._set_item(self.table, row, 3, f"{item_count} 台")
             self._set_item(self.table, row, 4, o["rent_start"])
             self._set_item(self.table, row, 5, o["rent_end"])
             self._set_item(self.table, row, 6, o.get("actual_return", "-"))

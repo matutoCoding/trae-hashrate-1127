@@ -1,6 +1,6 @@
 from datetime import date, datetime
 from database.db_manager import DatabaseManager
-from utils.helpers import generate_batch_no
+from utils.helpers import generate_check_no
 
 
 class StockCheck:
@@ -23,8 +23,7 @@ class StockCheck:
 
     @staticmethod
     def generate_check_no():
-        now = datetime.now()
-        return "PD" + now.strftime("%Y%m%d%H%M%S")
+        return generate_check_no()
 
     @staticmethod
     def get_all():

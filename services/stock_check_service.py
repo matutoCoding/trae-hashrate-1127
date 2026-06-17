@@ -23,21 +23,30 @@ class StockCheckService:
     def create_type_check(type_id=None, operator="", remark="", check_date=None):
         check_id, check_no = StockCheck.create("type", type_id, operator, remark, check_date)
         if type_id:
-            batches = EquipmentBatch.get_fifo_for_type(type_id)
-            for b in batches:
-                system_qty = b.get("available_count", 0)
-                StockCheckItem.create(check_id, type_id=type_id, batch_id=b["id"],
+            db = DatabaseManager()
+            rows = db.query("""
+                SELECT b.id as batch_id,
+                       (SELECT COUNT(*) FROM equipment_items i 
+                        WHERE i.batch_id = b.id AND i.status = 'available') as available_count
+                FROM equipment_batches b
+                WHERE b.type_id = ?
+                ORDER BY b.in_date ASC, b.expire_date ASC
+            """, (type_id,))
+            for b in rows:
+                system_qty = b["available_count"]
+                StockCheckItem.create(check_id, type_id=type_id, batch_id=b["batch_id"],
                                       system_qty=system_qty, actual_qty=system_qty)
         else:
+            db = DatabaseManager()
             types = EquipmentType.get_all()
             for t in types:
-                stats = EquipmentService.get_type_stats()
-                for s in stats:
-                    if s["id"] == t.id:
-                        StockCheckItem.create(check_id, type_id=t.id, batch_id=None,
-                                              system_qty=s.get("total", 0),
-                                              actual_qty=s.get("total", 0))
-                        break
+                row = db.query_one("""
+                    SELECT COUNT(*) as cnt FROM equipment_items
+                    WHERE type_id = ? AND status = 'available'
+                """, (t.id,))
+                system_qty = row["cnt"] if row else 0
+                StockCheckItem.create(check_id, type_id=t.id, batch_id=None,
+                                      system_qty=system_qty, actual_qty=system_qty)
         StockCheckService._recalc_totals(check_id)
         return check_id, check_no
 
@@ -56,11 +65,17 @@ class StockCheckService:
                 StockCheckItem.create(check_id, type_id=batch.type_id, batch_id=batch_id,
                                       system_qty=system_qty, actual_qty=system_qty)
         else:
-            batches = EquipmentBatch.get_all_with_info()
-            for b in batches:
-                StockCheckItem.create(check_id, type_id=b.get("type_id"), batch_id=b["id"],
-                                      system_qty=b.get("available_count", 0),
-                                      actual_qty=b.get("available_count", 0))
+            rows = db.query("""
+                SELECT b.id as batch_id, b.type_id,
+                       (SELECT COUNT(*) FROM equipment_items i 
+                        WHERE i.batch_id = b.id AND i.status = 'available') as available_count
+                FROM equipment_batches b
+                ORDER BY b.in_date ASC, b.expire_date ASC
+            """)
+            for b in rows:
+                system_qty = b["available_count"]
+                StockCheckItem.create(check_id, type_id=b["type_id"], batch_id=b["batch_id"],
+                                      system_qty=system_qty, actual_qty=system_qty)
         StockCheckService._recalc_totals(check_id)
         return check_id, check_no
 
@@ -110,14 +125,15 @@ class StockCheckService:
         db = DatabaseManager()
         if loss_qty > 0:
             sql = """
-                SELECT id FROM equipment_items 
-                WHERE status = 'available' 
+                SELECT i.id FROM equipment_items i
+                JOIN equipment_batches b ON i.batch_id = b.id
+                WHERE i.status = 'available'
                 {type_condition} {batch_condition}
-                ORDER BY in_date ASC, expire_date ASC
+                ORDER BY b.in_date ASC, b.expire_date ASC, i.id ASC
                 LIMIT ?
             """.format(
-                type_condition="AND type_id = ?" if type_id else "",
-                batch_condition="AND batch_id = ?" if batch_id else ""
+                type_condition="AND i.type_id = ?" if type_id else "",
+                batch_condition="AND i.batch_id = ?" if batch_id else ""
             )
             params = []
             if type_id:
@@ -127,7 +143,15 @@ class StockCheckService:
             params.append(loss_qty)
             rows = db.query(sql, tuple(params))
             for row in rows:
-                db.execute("DELETE FROM equipment_items WHERE id = ?", (row["id"],))
+                item_id = row["id"]
+                db.execute("DELETE FROM rental_order_items WHERE item_id = ?", (item_id,))
+                db.execute("DELETE FROM equipment_items WHERE id = ?", (item_id,))
+            if batch_id:
+                db.execute("""
+                    UPDATE equipment_batches SET quantity = (
+                        SELECT COUNT(*) FROM equipment_items WHERE batch_id = ?
+                    ) WHERE id = ?
+                """, (batch_id, batch_id))
         if profit_qty > 0:
             if not batch_id or not type_id:
                 return
@@ -135,13 +159,18 @@ class StockCheckService:
             if not batch:
                 return
             from utils.helpers import generate_item_code
-            expire_date = batch.expire_date if hasattr(batch, 'expire_date') else batch.get('expire_date')
+            batch_no = batch.batch_no if hasattr(batch, 'batch_no') else batch.get('batch_no')
             for i in range(profit_qty):
-                item_code = generate_item_code(batch.batch_no if hasattr(batch, 'batch_no') else batch.get('batch_no'))
+                item_code = generate_item_code(batch_no)
                 db.execute("""
-                    INSERT INTO equipment_items (item_code, type_id, batch_id, status, in_date, expire_date)
-                    VALUES (?, ?, ?, 'available', DATE('now'), ?)
-                """, (item_code, type_id, batch_id, expire_date))
+                    INSERT INTO equipment_items (item_code, type_id, batch_id, status)
+                    VALUES (?, ?, ?, 'available')
+                """, (item_code, type_id, batch_id))
+            db.execute("""
+                UPDATE equipment_batches SET quantity = (
+                    SELECT COUNT(*) FROM equipment_items WHERE batch_id = ?
+                ) WHERE id = ?
+            """, (batch_id, batch_id))
 
     @staticmethod
     def delete_check(check_id):
